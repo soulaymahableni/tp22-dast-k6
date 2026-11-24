@@ -1,0 +1,87 @@
+openapi: 3.0.3
+info:
+  title: contact-api
+  version: 1.0.0
+  description: API de contact (TP8), cible du scan ZAP API (TP22)
+servers:
+  - url: http://localhost:3002
+paths:
+  /api/health:
+    get:
+      summary: Etat de l'API
+      operationId: getHealth
+      responses:
+        "200":
+          description: API disponible
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /api/contact:
+    post:
+      summary: Envoyer un message de contact
+      operationId: postContact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Contact"
+            example:
+              name: Alice Martin
+              email: alice@example.com
+              message: Bonjour, je souhaite un devis.
+      responses:
+        "201":
+          description: Message reçu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: received
+        "400":
+          description: Données invalides (validation Zod) ou JSON mal formé
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Corps de requête trop volumineux
+components:
+  schemas:
+    Contact:
+      type: object
+      additionalProperties: false
+      required: [name, email, message]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        message:
+          type: string
+          minLength: 10
+          maxLength: 2000
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }

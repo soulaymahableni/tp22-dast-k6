@@ -1,0 +1,53 @@
+name: dast-perf
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  dast-perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET: http://localhost:8080   # on teste ce qui partira en prod : l'appli DERRIÈRE le proxy durci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Démarrer la cible (Juice Shop + proxy + contact-api)
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            curl -fs "$TARGET" >/dev/null && break
+            sleep 3
+          done
+          curl -sI "$TARGET" | head -20
+
+      - name: ZAP baseline avec règles bloquantes (rules.tsv)
+        run: |
+          mkdir -p reports
+          chmod -R a+rwX reports zap && chmod a+w .
+          docker run --rm --network host -v "$PWD:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t "$TARGET" -c zap/rules.tsv -I \
+            -r reports/zap-baseline.html -J reports/zap-baseline.json
+        # -I : les WARN ne font pas échouer ; seuls les FAIL de rules.tsv bloquent (code retour 1)
+
+      - name: Publier le rapport ZAP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: reports/
+
+      - name: k6 smoke
+        run: |
+          docker run --rm -i --network host -e BASE_URL="$TARGET" grafana/k6 run - < k6/smoke.js
+
+      - name: k6 load (seuils bloquants)
+        run: |
+          docker run --rm -i --network host -e BASE_URL="$TARGET" -e VUS=10 grafana/k6 run - < k6/load.js
+
+      - name: Arrêter la cible
+        if: always()
+        run: docker compose down -v
